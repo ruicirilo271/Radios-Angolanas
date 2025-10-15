@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rádios Futuristas Neon</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>🎧 Rádios Futuristas Angola</h1>
+    <button id="themeBtn">🌗 Alternar Tema</button>
+  </header>
+
+  <div class="content">
+    <div class="stations" id="stations"></div>
+  </div>
+
+  <footer>
+    <div id="currentStation" class="current-station"></div>
+    <audio id="player" controls></audio>
+    <div class="controls">
+      <button id="favBtn">⭐ Favoritos</button>
+      <button id="histBtn">🕓 Histórico</button>
+      <button id="allBtn">📻 Todas</button>
+    </div>
+  </footer>
+
+  <div id="popup" class="popup hidden">
+    <div class="popup-content">
+      <h2 id="popup-title"></h2>
+      <div id="popup-list"></div>
+      <button id="closePopup">Fechar</button>
+    </div>
+  </div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
+
+
+
+
+
+
