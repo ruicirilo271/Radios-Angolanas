@@ -1,3 +1,4 @@
+// Elementos DOM
 const stationsContainer = document.getElementById("stations");
 const player = document.getElementById("player");
 const favBtn = document.getElementById("favBtn");
@@ -16,42 +17,62 @@ const HIST_KEY = "radioHistory_v2";
 let allStations = [];
 let currentPlayingCard = null;
 
+// Carrega estações pedindo ao backend
 async function loadStations() {
-  const res = await fetch("/static/stations.json");
-  const data = await res.json();
-  allStations = data.filter(st => st.stream && st.name);
-  renderStations(allStations);
+  try {
+    const res = await fetch("/stations", {cache: "no-store"});
+    const data = await res.json();
+    // Filtrar entradas inválidas
+    allStations = (Array.isArray(data) ? data : []).filter(st => st.stream && st.name);
+    renderStations(allStations);
+  } catch (err) {
+    console.error("Erro ao carregar estações:", err);
+    stationsContainer.innerHTML = "<p>Erro ao carregar rádios.</p>";
+  }
 }
 
 function renderStations(list) {
   stationsContainer.innerHTML = "";
-  list.forEach(st => {
+  if (!list.length) {
+    stationsContainer.innerHTML = "<p>Nenhuma rádio encontrada.</p>";
+    return;
+  }
+  list.forEach((st, idx) => {
     const card = document.createElement("div");
     card.className = "station";
     card.innerHTML = `
-      <h3>${st.name}</h3>
+      <h3 class="station-name">${st.name}</h3>
       <div class="buttons">
-        <button class="play">▶️</button>
-        <button class="fav">⭐</button>
+        <button class="play" data-idx="${idx}" aria-label="Tocar">▶️</button>
+        <button class="fav" data-idx="${idx}" aria-label="Favorito">⭐</button>
       </div>
     `;
     const playBtn = card.querySelector(".play");
     const favBtnCard = card.querySelector(".fav");
 
-    playBtn.onclick = () => playStation(st, card);
-    favBtnCard.onclick = () => toggleFavorite(st);
+    playBtn.addEventListener("click", () => playStation(st, card));
+    favBtnCard.addEventListener("click", () => toggleFavorite(st));
 
     stationsContainer.appendChild(card);
   });
 }
 
 function playStation(station, card) {
+  // Define fonte e tenta tocar
   player.src = station.stream;
-  player.play();
-  currentStation.innerHTML = `🎶 Tocando: ${station.name}`;
+  player.play().catch(err => {
+    // Alguns streams podem ser bloqueados ou não reproduzir no browser
+    console.warn("Erro ao tentar tocar:", err);
+  });
+
+  // Mostra nome no player fixo
+  currentStation.textContent = `🎶 Tocando: ${station.name}`;
+
+  // Histórico
   saveHistory(station);
 
-  if(currentPlayingCard) currentPlayingCard.classList.remove("playing");
+  // Destaque visual
+  if (currentPlayingCard) currentPlayingCard.classList.remove("playing");
   card.classList.add("playing");
   currentPlayingCard = card;
 }
@@ -74,6 +95,7 @@ function saveHistory(station) {
   localStorage.setItem(HIST_KEY, JSON.stringify(hist));
 }
 
+// Popup para Favoritos / Histórico
 favBtn.onclick = () => openPopup("Favoritos", FAV_KEY);
 histBtn.onclick = () => openPopup("Histórico", HIST_KEY);
 allBtn.onclick = () => renderStations(allStations);
@@ -83,22 +105,32 @@ function openPopup(title, key) {
   popupTitle.textContent = title;
   popupList.innerHTML = "";
   const items = JSON.parse(localStorage.getItem(key)) || [];
-  items.forEach(st => {
-    const div = document.createElement("div");
-    div.className = "station small";
-    div.innerHTML = `<h3>${st.name}</h3>`;
-    div.onclick = () => playStation(st, div);
-    popupList.appendChild(div);
-  });
+  if (!items.length) {
+    popupList.innerHTML = "<p>Sem itens.</p>";
+  } else {
+    items.forEach(st => {
+      const div = document.createElement("div");
+      div.className = "station small";
+      div.innerHTML = `<h3>${st.name}</h3>`;
+      div.onclick = () => {
+        playStation(st, div);
+        popup.classList.add("hidden");
+      };
+      popupList.appendChild(div);
+    });
+  }
   popup.classList.remove("hidden");
 }
 
+// Tema claro/escuro
 themeBtn.onclick = () => {
   document.body.classList.toggle("light");
+  // Guarda preferência simples se quiseres:
+  // localStorage.setItem('theme_light', document.body.classList.contains('light'));
 };
 
+// Inicializa
 loadStations();
-
 
 
 

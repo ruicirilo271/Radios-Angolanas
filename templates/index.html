@@ -1,23 +1,23 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rádios Futuristas Neon</title>
-<link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rádios Futuristas Angola</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header>
     <h1>🎧 Rádios Futuristas Angola</h1>
-    <button id="themeBtn">🌗 Alternar Tema</button>
+    <button id="themeBtn" aria-label="Alternar tema">🌗</button>
   </header>
 
-  <div class="content">
+  <main class="content">
     <div class="stations" id="stations"></div>
-  </div>
+  </main>
 
   <footer>
-    <div id="currentStation" class="current-station"></div>
+    <div id="currentStation" class="current-station">Nenhuma rádio a tocar</div>
     <audio id="player" controls></audio>
     <div class="controls">
       <button id="favBtn">⭐ Favoritos</button>
@@ -26,7 +26,7 @@
     </div>
   </footer>
 
-  <div id="popup" class="popup hidden">
+  <div id="popup" class="popup hidden" role="dialog" aria-modal="true">
     <div class="popup-content">
       <h2 id="popup-title"></h2>
       <div id="popup-list"></div>
@@ -34,7 +34,7 @@
     </div>
   </div>
 
-<script src="/static/script.js"></script>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
 
