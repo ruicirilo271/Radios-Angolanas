@@ -86,7 +86,8 @@ def recognize_browserless(file_path):
             """
         }
 
-        url = f"https://chrome.browserless.io/playwright?token={BROWSERLESS_KEY}"
+        url = f"wss://chrome.browserless.io/playwright?token={BROWSERLESS_KEY}&stealth=true"
+
         r = requests.post(url, json=payload, timeout=90)
         if r.ok:
             j = r.json()
@@ -220,3 +221,4 @@ def analyze():
 # ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
