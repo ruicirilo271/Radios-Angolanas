@@ -1,45 +1,73 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Rádios Futuristas Angola</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header>
-    <h1>🎧 Rádios Futuristas Angola</h1>
-    <button id="themeBtn" aria-label="Alternar tema">🌗</button>
+    <h1>🎧 Rádios Futuristas Neon</h1>
+    <div class="hdr-right">
+      <button id="themeBtn" class="btn small">🌗</button>
+    </div>
   </header>
 
   <main class="content">
-    <div class="stations" id="stations"></div>
+    <div class="controls-top">
+      <button id="allBtn" class="btn">📻 Todas</button>
+      <button id="favBtn" class="btn">⭐ Favoritos</button>
+      <button id="histBtn" class="btn">🕓 Histórico</button>
+    </div>
+
+    <div class="stations" id="stations">A carregar rádios...</div>
+
+    <!-- Extras: histórico + lyrics + bio + top10 -->
+    <section id="extras" class="extras">
+      <div class="extras-col">
+        <h3>Histórico (últimas 4)</h3>
+        <div id="historyList" class="history-list">
+          <p>Sem histórico.</p>
+        </div>
+      </div>
+
+      <div class="extras-col">
+        <h3>Letra</h3>
+        <div id="lyrics" class="lyrics">—</div>
+      </div>
+
+      <div class="extras-col">
+        <h3>Artista / Biografia</h3>
+        <div id="artistBio" class="artist-bio">—</div>
+
+        <h3>Top 10 (Last.fm)</h3>
+        <div id="top10" class="top10">—</div>
+      </div>
+    </section>
   </main>
 
   <footer>
-    <div id="currentStation" class="current-station">Nenhuma rádio a tocar</div>
-    <audio id="player" controls></audio>
-    <div class="controls">
-      <button id="favBtn">⭐ Favoritos</button>
-      <button id="histBtn">🕓 Histórico</button>
-      <button id="allBtn">📻 Todas</button>
+    <div class="player-top">
+      <img id="coverImg" class="cover hidden" alt="Capa">
+      <div class="meta">
+        <div id="stationName" class="station-name">Nenhuma rádio a tocar</div>
+        <div id="songInfo" class="song-info">—</div>
+      </div>
+    </div>
+    <div class="player-row">
+      <audio id="player" controls></audio>
     </div>
   </footer>
 
-  <div id="popup" class="popup hidden" role="dialog" aria-modal="true">
+  <div id="popup" class="popup hidden">
     <div class="popup-content">
       <h2 id="popup-title"></h2>
       <div id="popup-list"></div>
-      <button id="closePopup">Fechar</button>
+      <button id="closePopup" class="btn">Fechar</button>
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+<script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
-
-
-
-
-
-

@@ -1,89 +1,222 @@
-from flask import Flask, render_template, jsonify
-import requests
+# -*- coding: utf-8 -*-
+import os, json, tempfile, subprocess, base64, logging, requests
+from flask import Flask, render_template, jsonify, request
 from bs4 import BeautifulSoup
-import json
-import os
-import tempfile
-import logging
+from urllib.parse import urlencode
 
-logging.basicConfig(level=logging.INFO)
-
+# ──────────────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 app = Flask(__name__)
 
+# Configurações principais
 RADIO_URL = "https://onlineradiobox.com/ao/"
-ON_VERCEL = os.environ.get("VERCEL") == "1"
+TMP_DIR = tempfile.gettempdir()  # /tmp no Vercel
+FFMPEG_BIN = "ffmpeg"
+LASTFM_API_KEY = os.getenv("LASTFM_API_KEY", "")
+BROWSERLESS_KEY = os.getenv("BROWSERLESS_KEY")  # token de https://www.browserless.io/
 
-if ON_VERCEL:
-    STATIONS_FILE = os.path.join(tempfile.gettempdir(), "stations.json")
-else:
-    STATIONS_FILE = os.path.join(os.path.dirname(__file__), "static", "stations.json")
+# ──────────────────────────────────────────────────────────────
+def normalize_img(img):
+    if not img:
+        return None
+    img = img.strip()
+    if img.startswith("//"): return "https:" + img
+    if img.startswith("http://"): return img.replace("http://", "https://")
+    return img
 
+
+# 🔹 Scraping das rádios angolanas
 def scrape_radios():
-    """
-    Faz scraping das rádios (nomes + stream) e escreve o JSON no STATIONS_FILE.
-    Retorna a lista de estações.
-    """
-    logging.info("Iniciando scraping de rádios...")
-    try:
-        response = requests.get(RADIO_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        response.raise_for_status()
-    except Exception as e:
-        logging.exception("Erro ao buscar a página de rádios: %s", e)
-        return []
-
-    soup = BeautifulSoup(response.text, "html.parser")
     stations = []
-
-    # Percorre os elementos que normalmente têm info
-    for btn in soup.select(".station_play"):
-        name = btn.get("radioname")
-        stream = btn.get("stream")
-        # Apenas grava nome e stream — sem imagens (como pedido)
-        if name and stream:
-            stations.append({
-                "name": name.strip(),
-                "stream": stream.strip()
-            })
-
-    # Garante pasta e grava o ficheiro
     try:
-        os.makedirs(os.path.dirname(STATIONS_FILE), exist_ok=True)
-        with open(STATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(stations, f, ensure_ascii=False, indent=2)
-        logging.info("stations.json gravado em: %s", STATIONS_FILE)
+        r = requests.get(RADIO_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        for btn in soup.select("button.b-play.station_play, button.station_play"):
+            name = btn.get("radioname") or btn.get("radioName")
+            stream = btn.get("stream")
+            img = btn.get("radioimg") or btn.get("radioImg")
+            if name and stream:
+                stations.append({
+                    "name": name.strip(),
+                    "stream": stream.strip(),
+                    "img": normalize_img(img)
+                })
+        logging.info(f"Encontradas {len(stations)} rádios.")
     except Exception as e:
-        logging.exception("Erro ao gravar stations.json: %s", e)
-
+        logging.exception("Erro no scraping: %s", e)
     return stations
 
+
+# 🔹 Gravação temporária do stream
+def record_stream(stream_url, seconds=10):
+    out = os.path.join(TMP_DIR, "sample.mp3")
+    cmd = [
+        FFMPEG_BIN, "-y", "-i", stream_url, "-t", str(seconds),
+        "-acodec", "libmp3lame", "-ar", "44100", "-ac", "2",
+        out, "-loglevel", "error"
+    ]
+    try:
+        subprocess.run(cmd, check=True, timeout=seconds + 10)
+        return out
+    except Exception as e:
+        logging.error("ffmpeg erro: %s", e)
+        return None
+
+
+# 🔹 Reconhecimento via Browserless (ShazamIO Node)
+def recognize_browserless(file_path):
+    """Usa Browserless (Playwright) para correr JS que identifica a música."""
+    if not BROWSERLESS_KEY:
+        return None
+    try:
+        with open(file_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        payload = {
+            "code": f"""
+                const fs = require('fs');
+                const b64 = `{b64}`;
+                const buf = Buffer.from(b64, 'base64');
+                fs.writeFileSync('/tmp/sample.mp3', buf);
+                const {{ Shazam }} = await import('shazamio');
+                const shazam = new Shazam();
+                const out = await shazam.recognizeSong('/tmp/sample.mp3');
+                return out;
+            """
+        }
+
+        url = f"https://chrome.browserless.io/playwright?token={BROWSERLESS_KEY}"
+        r = requests.post(url, json=payload, timeout=90)
+        if r.ok:
+            j = r.json()
+            track = j.get("track", {})
+            if track:
+                return {"artist": track.get("subtitle"), "title": track.get("title")}
+        else:
+            logging.error("Browserless status %s: %s", r.status_code, r.text)
+    except Exception as e:
+        logging.error("Erro Browserless: %s", e)
+    return None
+
+
+# 🔹 iTunes cover
+def itunes_cover(artist, title):
+    try:
+        q = f"{artist} {title}".strip()
+        url = "https://itunes.apple.com/search?" + urlencode({"term": q, "limit": 1, "media": "music"})
+        r = requests.get(url, timeout=10)
+        if r.ok:
+            j = r.json()
+            if j.get("resultCount"):
+                art = j["results"][0].get("artworkUrl100")
+                return art.replace("100x100", "600x600") if art else None
+    except Exception:
+        pass
+    return None
+
+
+# 🔹 Letras
+def get_lyrics(artist, title):
+    try:
+        url = f"https://api.lyrics.ovh/v1/{artist}/{title}"
+        r = requests.get(url, timeout=10)
+        if r.ok:
+            return r.json().get("lyrics")
+    except Exception:
+        pass
+    return None
+
+
+# 🔹 Biografia
+def get_bio(artist):
+    if not LASTFM_API_KEY:
+        return None
+    try:
+        params = {
+            "method": "artist.getinfo",
+            "artist": artist,
+            "api_key": LASTFM_API_KEY,
+            "format": "json"
+        }
+        r = requests.get("https://ws.audioscrobbler.com/2.0/", params=params, timeout=10)
+        j = r.json()
+        return j.get("artist", {}).get("bio", {}).get("summary")
+    except Exception:
+        return None
+
+
+# 🔹 Top 10 músicas
+def get_top(artist):
+    if not LASTFM_API_KEY:
+        return []
+    try:
+        params = {
+            "method": "artist.gettoptracks",
+            "artist": artist,
+            "api_key": LASTFM_API_KEY,
+            "format": "json",
+            "limit": 10
+        }
+        r = requests.get("https://ws.audioscrobbler.com/2.0/", params=params, timeout=10)
+        j = r.json()
+        tracks = j.get("toptracks", {}).get("track", [])
+        return [{"name": t.get("name"), "url": t.get("url")} for t in tracks]
+    except Exception:
+        return []
+
+
+# ──────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
 @app.route("/stations")
-def get_stations():
-    """
-    Endpoint que devolve a lista de estações.
-    - Tenta ler STATIONS_FILE primeiro.
-    - Se não existir ou ocorrer erro, faz o scraping e grava.
-    """
-    if os.path.exists(STATIONS_FILE):
-        try:
-            with open(STATIONS_FILE, "r", encoding="utf-8") as f:
-                stations = json.load(f)
-                # Filtra entradas sem stream/nome por segurança
-                stations = [s for s in stations if s.get("name") and s.get("stream")]
-                return jsonify(stations)
-        except Exception:
-            logging.exception("Falha ao ler stations.json — fará scraping.")
-            # continua para scraping
+def stations():
+    return jsonify(scrape_radios())
 
-    # Se não havia ficheiro ou deu erro, faz scraping
-    stations = scrape_radios()
-    return jsonify(stations)
 
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    """Grava o stream temporariamente e usa Browserless para identificar."""
+    data = request.get_json(force=True)
+    stream = data.get("stream")
+    station_name = data.get("station_name", "")
+    if not stream:
+        return jsonify({"error": "stream required"}), 400
+
+    path = record_stream(stream)
+    if not path:
+        return jsonify({"error": "ffmpeg failed"}), 500
+
+    info = recognize_browserless(path) or {}
+    artist = info.get("artist")
+    title = info.get("title")
+
+    # extras
+    cover = itunes_cover(artist, title) if artist and title else None
+    lyrics = get_lyrics(artist, title) if artist and title else None
+    bio = get_bio(artist) if artist else None
+    top = get_top(artist) if artist else []
+
+    # limpeza
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+
+    return jsonify({
+        "station": station_name,
+        "artist": artist,
+        "title": title,
+        "cover": cover,
+        "lyrics": lyrics,
+        "bio": bio,
+        "top": top
+    })
+
+
+# ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Para desenvolvimento
-    app.run(host="0.0.0.0", port=5000, debug=True)
-
-
+    app.run(debug=True, port=5000)
